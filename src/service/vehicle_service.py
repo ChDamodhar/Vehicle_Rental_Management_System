@@ -7,14 +7,8 @@ class VehicleService:
     def add_vehicle(self, plate, model, vtype, rate):
         return self.dao.add_vehicle(plate, model, vtype, rate)
 
-    def update_vehicle(self, vehicle_id, model=None, vtype=None, rate=None, availability_status=None):
-        fields = {k: v for k, v in {
-            "model": model, 
-            "type": vtype, 
-            "rental_rate": rate, 
-            "availability_status": availability_status
-        }.items() if v is not None}
-        return self.dao.update_vehicle(vehicle_id, fields)
+    def update_vehicle(self, vehicle_id, model=None, vtype=None, rate=None, available=None):
+        return self.dao.update_vehicle(vehicle_id, model, vtype, rate, available)
 
     def delete_vehicle(self, vehicle_id):
         return self.dao.delete_vehicle(vehicle_id)
