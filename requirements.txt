@@ -1,4 +1,6 @@
-cat > requirements.txt <<EOF
+# requirements.txt
+
+streamlit
 supabase
 python-dotenv
-postgrest
+pandas
