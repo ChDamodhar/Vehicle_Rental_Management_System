@@ -35,16 +35,28 @@ def customer_menu():
             name = input("New Name: ") or None
             email = input("New Email: ") or None
             phone = input("New Phone: ") or None
+            license_no = input("New Driver License: ") or None
             address = input("New Address: ") or None
-            print(customer_service.update_customer(customer_id, name, email, phone, address))
+            print(customer_service.update_customer(
+                customer_id=customer_id, 
+                name=name, 
+                email=email, 
+                phone=phone, 
+                license_no=license_no, 
+                address=address
+            ))
 
         elif choice == "3":
             cid = input("Customer ID to delete: ")
             print(customer_service.delete_customer(cid))
 
         elif choice == "4":
-            for c in customer_service.list_customers():
-                print(f"ID: {c['id']} | Name: {c['name']} | Email: {c['email']} | Phone: {c['phone']}")
+            customers = customer_service.list_customers()
+            if isinstance(customers, list):
+                for c in customers:
+                    print(f"ID: {c.get('id')} | Name: {c.get('name')} | Email: {c.get('email')} | Phone: {c.get('phone')} | License: {c.get('license_no','N/A')} | Address: {c.get('address','N/A')}")
+            else:
+                print(customers)
 
         elif choice == "5":
             cid = input("Search by Customer ID: ")
