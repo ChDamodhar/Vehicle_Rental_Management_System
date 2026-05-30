@@ -11,7 +11,85 @@ from src.service.payment_service import PaymentService
 from src.service.maintenance_service import MaintenanceService
 from src.db_config import get_db_mode
 
-# Initialize Services
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+    html, body {
+        background: linear-gradient(135deg, #0f172a, #1e293b);
+        color: #f8fafc;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+    }
+    .auth-container {
+        background: rgba(31, 41, 55, 0.6);
+        border: 1px solid #334155;
+        border-radius: 16px;
+        padding: 30px 40px;
+        max-width: 400px;
+        margin: 80px auto;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.25);
+        backdrop-filter: blur(10px);
+    }
+    .auth-container h2 {font-family: 'Outfit', sans-serif; color:#60a5fa; text-align:center; margin-bottom:20px;}
+    .auth-container input {font-family: 'Outfit', sans-serif;}
+</style>
+""", unsafe_allow_html=True)
+
+if 'authenticated' not in st.session_state:
+    st.session_state['authenticated'] = False
+    st.session_state['user'] = None
+
+# Initialize SQLite user table (fallback if Supabase not used)
+import sqlite3
+conn = sqlite3.connect('vehicle_rental.db')
+cur = conn.cursor()
+cur.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL
+    )
+''')
+conn.commit()
+
+# Authentication UI
+auth_option = st.sidebar.selectbox("Authentication", ["Login", "Sign Up"], key="auth_option")
+if not st.session_state['authenticated']:
+    if auth_option == "Login":
+        st.title("AutoRent Pro – Login")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        if st.button("Login"):
+            cur.execute('SELECT * FROM users WHERE username=? AND password=?', (username, password))
+            user = cur.fetchone()
+            if user:
+                st.session_state['authenticated'] = True
+                st.session_state['user'] = user[1]
+                st.success("Logged in successfully!")
+                st.rerun()
+            else:
+                st.error("Invalid credentials")
+    else:  # Sign Up
+        st.title("AutoRent Pro – Create Account")
+        new_user = st.text_input("Choose a username")
+        new_pass = st.text_input("Create password", type="password")
+        confirm_pass = st.text_input("Confirm password", type="password")
+        if st.button("Sign Up"):
+            if new_pass != confirm_pass:
+                st.error("Passwords do not match")
+            elif new_user == "":
+                st.error("Username cannot be empty")
+            else:
+                try:
+                    cur.execute('INSERT INTO users (username, password) VALUES (?, ?)', (new_user, new_pass))
+                    conn.commit()
+                    st.success("Account created – you can now log in")
+                except sqlite3.IntegrityError:
+                    st.error("Username already exists")
+    st.stop()
+
+# Initialize Services (only after authentication)
 customer_service = CustomerService()
 vehicle_service = VehicleService()
 rental_service = RentalService()
@@ -19,12 +97,7 @@ payment_service = PaymentService()
 maintenance_service = MaintenanceService()
 
 # --- Page Configurations ---
-st.set_page_config(
-    page_title="AutoRent Pro - Enterprise Fleet Manager",
-    page_icon="🏎️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+
 
 # --- Design Aesthetics & Custom CSS Theme Overrides ---
 st.markdown("""
@@ -165,7 +238,7 @@ st.sidebar.markdown("---")
 
 menu = st.sidebar.radio(
     "MANAGEMENT CONSOLE",
-    ["📊 Dashboard Home", "👤 Customer Directory", "🚙 Fleet Inventory", "📝 Rental Bookings", "💳 Payment Ledger", "🔧 Maintenance Lab"]
+    ["📊 Dashboard Home", "📈 Business Analysis", "👤 Customer Directory", "🚙 Fleet Inventory", "📝 Rental Bookings", "💳 Payment Ledger", "🔧 Maintenance Lab"]
 )
 
 st.sidebar.markdown("---")
@@ -315,7 +388,7 @@ if menu == "📊 Dashboard Home":
             display_cols = ["id", "customer_name", "vehicle_plate", "vehicle_model", "start_date", "end_date"]
             # Fallback if names are missing
             available_cols = [c for c in display_cols if c in r_df.columns]
-            st.dataframe(r_df[available_cols].head(5), use_container_width=True)
+            st.dataframe(r_df[available_cols].head(5), width='stretch')
         else:
             st.info("No recent rentals.")
             
@@ -325,11 +398,188 @@ if menu == "📊 Dashboard Home":
             p_df = pd.DataFrame(payments_list)
             display_cols = ["id", "customer_name", "vehicle_plate", "amount", "payment_type", "payment_date"]
             available_cols = [c for c in display_cols if c in p_df.columns]
-            st.dataframe(p_df[available_cols].head(5), use_container_width=True)
+            st.dataframe(p_df[available_cols].head(5), width='stretch')
         else:
             st.info("No recent payments.")
 
-# --- 2. CUSTOMER DIRECTORY ---
+# --- 2. BUSINESS ANALYSIS ---
+elif menu == "📈 Business Analysis":
+    st.title("Business Intelligence & Analytics 📈")
+    st.markdown("Deep-dive insights into revenue performance, fleet utilisation, and customer behaviour.")
+
+    # Load all data
+    an_vehicles   = vehicle_service.list_vehicles()
+    an_rentals    = rental_service.list_rentals()
+    an_payments   = payment_service.list_payments()
+    an_customers  = customer_service.list_customers()
+    an_maint      = maintenance_service.list_maintenance()
+
+    vehicles_list  = an_vehicles  if isinstance(an_vehicles,  list) else []
+    rentals_list   = an_rentals   if isinstance(an_rentals,   list) else []
+    payments_list  = an_payments  if isinstance(an_payments,  list) else []
+    customers_list = an_customers if isinstance(an_customers, list) else []
+    maint_list     = an_maint     if isinstance(an_maint,     list) else []
+
+    # ── KPI row ────────────────────────────────────────────────────────────
+    total_revenue = sum(float(p.get("amount", 0)) for p in payments_list)
+    total_rentals = len(rentals_list)
+    total_vehicles = len(vehicles_list)
+    avg_rental_value = (total_revenue / total_rentals) if total_rentals else 0
+    total_maint_cost = sum(float(m.get("cost", 0)) for m in maint_list)
+
+    k1, k2, k3, k4 = st.columns(4)
+    kpi_style = lambda color: f'background:linear-gradient(135deg,#1e293b,#0f172a);border:1px solid #334155;border-top:4px solid {color};border-radius:12px;padding:20px;text-align:center;'
+    with k1:
+        st.markdown(f'<div style="{kpi_style("#10b981")}"><div style="color:#94a3b8;font-size:12px;font-weight:600;text-transform:uppercase;">Total Revenue</div><div style="color:#10b981;font-size:28px;font-weight:800;">${total_revenue:,.2f}</div></div>', unsafe_allow_html=True)
+    with k2:
+        st.markdown(f'<div style="{kpi_style("#3b82f6")}"><div style="color:#94a3b8;font-size:12px;font-weight:600;text-transform:uppercase;">Total Rentals</div><div style="color:#3b82f6;font-size:28px;font-weight:800;">{total_rentals}</div></div>', unsafe_allow_html=True)
+    with k3:
+        st.markdown(f'<div style="{kpi_style("#f59e0b")}"><div style="color:#94a3b8;font-size:12px;font-weight:600;text-transform:uppercase;">Avg Rental Value</div><div style="color:#f59e0b;font-size:28px;font-weight:800;">${avg_rental_value:,.2f}</div></div>', unsafe_allow_html=True)
+    with k4:
+        st.markdown(f'<div style="{kpi_style("#f43f5e")}"><div style="color:#94a3b8;font-size:12px;font-weight:600;text-transform:uppercase;">Maintenance Cost</div><div style="color:#f43f5e;font-size:28px;font-weight:800;">${total_maint_cost:,.2f}</div></div>', unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Row 1: Revenue over time  +  Payment mode breakdown ────────────────
+    ch1, ch2 = st.columns(2)
+
+    with ch1:
+        st.subheader("💰 Revenue Over Time")
+        if payments_list:
+            pay_df = pd.DataFrame(payments_list)
+            pay_df["amount"] = pay_df["amount"].astype(float)
+            if "payment_date" in pay_df.columns:
+                rev_trend = pay_df.groupby("payment_date")["amount"].sum().reset_index()
+                rev_trend = rev_trend.sort_values("payment_date")
+                rev_trend.columns = ["Date", "Revenue ($)"]
+                st.line_chart(rev_trend.set_index("Date"))
+            else:
+                st.info("No date column found in payments data.")
+        else:
+            st.info("No payment records yet. Add payments to see the revenue trend.")
+
+    with ch2:
+        st.subheader("💳 Payment Mode Breakdown")
+        if payments_list:
+            pay_df2 = pd.DataFrame(payments_list)
+            if "payment_type" in pay_df2.columns:
+                mode_counts = pay_df2["payment_type"].value_counts().reset_index()
+                mode_counts.columns = ["Mode", "Count"]
+                st.bar_chart(mode_counts.set_index("Mode"))
+            else:
+                st.info("No payment type column available.")
+        else:
+            st.info("No payment records yet.")
+
+    # ── Row 2: Most-used vehicles  +  Vehicle type revenue ─────────────────
+    ch3, ch4 = st.columns(2)
+
+    with ch3:
+        st.subheader("🚙 Most-Used Vehicles (by Rentals)")
+        if rentals_list:
+            rent_df = pd.DataFrame(rentals_list)
+            if "vehicle_plate" in rent_df.columns:
+                usage = rent_df["vehicle_plate"].value_counts().reset_index()
+                usage.columns = ["Vehicle Plate", "Rental Count"]
+                top10 = usage.head(10)
+                st.bar_chart(top10.set_index("Vehicle Plate"))
+            elif "vehicle_id" in rent_df.columns:
+                usage = rent_df["vehicle_id"].value_counts().reset_index()
+                usage.columns = ["Vehicle ID", "Rental Count"]
+                top10 = usage.head(10)
+                st.bar_chart(top10.set_index("Vehicle ID"))
+            else:
+                st.info("Vehicle data missing from rental records.")
+        else:
+            st.info("No rental records yet. Book rentals to see vehicle usage stats.")
+
+    with ch4:
+        st.subheader("🏷️ Revenue by Vehicle Type")
+        if payments_list and rentals_list:
+            pay_df3 = pd.DataFrame(payments_list)
+            rent_df3 = pd.DataFrame(rentals_list)
+            pay_df3["amount"] = pay_df3["amount"].astype(float)
+            # Join payments → rentals → vehicles to get vehicle type
+            if "rental_id" in pay_df3.columns and "id" in rent_df3.columns:
+                merged = pay_df3.merge(rent_df3[["id","vehicle_id"]], left_on="rental_id", right_on="id", how="left")
+                veh_df = pd.DataFrame(vehicles_list)
+                if not veh_df.empty and "id" in veh_df.columns and "type" in veh_df.columns:
+                    merged2 = merged.merge(veh_df[["id","type"]], left_on="vehicle_id", right_on="id", how="left")
+                    type_rev = merged2.groupby("type")["amount"].sum().reset_index()
+                    type_rev.columns = ["Vehicle Type", "Revenue ($)"]
+                    st.bar_chart(type_rev.set_index("Vehicle Type"))
+                else:
+                    st.info("Vehicle type data not available.")
+            else:
+                st.info("Cannot join payment and rental data — missing id columns.")
+        else:
+            st.info("Add payments and rentals to see revenue by vehicle type.")
+
+    # ── Row 3: Top customers + Fleet utilisation ────────────────────────────
+    ch5, ch6 = st.columns(2)
+
+    with ch5:
+        st.subheader("👤 Top 10 Customers by Spend")
+        if payments_list:
+            pay_df4 = pd.DataFrame(payments_list)
+            pay_df4["amount"] = pay_df4["amount"].astype(float)
+            if "customer_name" in pay_df4.columns:
+                top_cust = pay_df4.groupby("customer_name")["amount"].sum().sort_values(ascending=False).head(10).reset_index()
+                top_cust.columns = ["Customer", "Total Spend ($)"]
+                st.bar_chart(top_cust.set_index("Customer"))
+            elif "customer_id" in pay_df4.columns:
+                top_cust = pay_df4.groupby("customer_id")["amount"].sum().sort_values(ascending=False).head(10).reset_index()
+                top_cust.columns = ["Customer ID", "Total Spend ($)"]
+                st.bar_chart(top_cust.set_index("Customer ID"))
+            else:
+                st.info("Customer data missing from payment records.")
+        else:
+            st.info("No payment records yet.")
+
+    with ch6:
+        st.subheader("📊 Fleet Utilisation Rate")
+        if vehicles_list:
+            avail = sum(1 for v in vehicles_list if v.get("available"))
+            rented = len(vehicles_list) - avail
+            util_df = pd.DataFrame({"Status": ["🟢 Available", "🔴 In Use"], "Count": [avail, rented]})
+            st.bar_chart(util_df.set_index("Status"))
+            util_rate = (rented / len(vehicles_list) * 100) if vehicles_list else 0
+            st.metric("Fleet Utilisation Rate", f"{util_rate:.1f}%", delta=f"{rented} vehicles dispatched")
+        else:
+            st.info("No vehicles registered yet.")
+
+    # ── Detailed data tables ─────────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("📋 Detailed Analytics Tables")
+    tab_a, tab_b, tab_c = st.tabs(["Revenue Ledger", "Rental Summary", "Maintenance Costs"])
+
+    with tab_a:
+        if payments_list:
+            p_adf = pd.DataFrame(payments_list)
+            p_adf["amount"] = p_adf["amount"].astype(float)
+            st.dataframe(p_adf, width='stretch')
+            st.markdown(f"**Total Revenue: ${p_adf['amount'].sum():,.2f}** across **{len(p_adf)} transactions**")
+        else:
+            st.info("No payments recorded yet.")
+
+    with tab_b:
+        if rentals_list:
+            r_adf = pd.DataFrame(rentals_list)
+            st.dataframe(r_adf, width='stretch')
+            st.markdown(f"**Total Bookings: {len(r_adf)}**")
+        else:
+            st.info("No rentals recorded yet.")
+
+    with tab_c:
+        if maint_list:
+            m_adf = pd.DataFrame(maint_list)
+            m_adf["cost"] = m_adf["cost"].astype(float)
+            st.dataframe(m_adf, width='stretch')
+            st.markdown(f"**Total Maintenance Cost: ${m_adf['cost'].sum():,.2f}**")
+        else:
+            st.info("No maintenance records yet.")
+
+# --- 3. CUSTOMER DIRECTORY ---
 elif menu == "👤 Customer Directory":
     st.title("Customer Management Hub 👤")
     tab1, tab2, tab3, tab4 = st.tabs(["➕ Register Client", "📋 Complete Directory", "🔍 Search Profiles", "✏️ Edit Client Details"])
@@ -359,7 +609,7 @@ elif menu == "👤 Customer Directory":
         customers = customer_service.list_customers()
         if isinstance(customers, list):
             if customers:
-                st.dataframe(pd.DataFrame(customers), use_container_width=True)
+                st.dataframe(pd.DataFrame(customers), width='stretch')
             else:
                 st.info("No customers found.")
         else:
@@ -426,7 +676,7 @@ elif menu == "🚙 Fleet Inventory":
                     avail = v.get("available")
                     v_copy["Status Badge"] = "🟢 Available" if avail else "🔴 Dispatched/Service"
                     beautified_list.append(v_copy)
-                st.dataframe(pd.DataFrame(beautified_list), use_container_width=True)
+                st.dataframe(pd.DataFrame(beautified_list), width='stretch')
             else:
                 st.info("No vehicles registered in fleet.")
         else:
@@ -557,7 +807,7 @@ elif menu == "📝 Rental Bookings":
         rentals = rental_service.list_rentals()
         if isinstance(rentals, list):
             if rentals:
-                st.dataframe(pd.DataFrame(rentals), use_container_width=True)
+                st.dataframe(pd.DataFrame(rentals), width='stretch')
             else:
                 st.info("No rental records logged.")
         else:
@@ -635,7 +885,7 @@ elif menu == "💳 Payment Ledger":
         payments = payment_service.list_payments()
         if isinstance(payments, list):
             if payments:
-                st.dataframe(pd.DataFrame(payments), use_container_width=True)
+                st.dataframe(pd.DataFrame(payments), width='stretch')
             else:
                 st.info("No payments transactions found.")
         else:
@@ -699,7 +949,7 @@ elif menu == "🔧 Maintenance Lab":
         mrecords = maintenance_service.list_maintenance()
         if isinstance(mrecords, list):
             if mrecords:
-                st.dataframe(pd.DataFrame(mrecords), use_container_width=True)
+                st.dataframe(pd.DataFrame(mrecords), width='stretch')
             else:
                 st.info("No fleet vehicles currently in service.")
         else:
